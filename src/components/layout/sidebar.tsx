@@ -8,6 +8,8 @@ import {
   LayoutDashboard,
   FileText,
   MessageSquare,
+  Users,
+  Lock,
   LogOut,
   Gamepad2,
 } from "lucide-react";
@@ -19,6 +21,8 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/content", label: "Content", icon: FileText },
   { href: "/feedback", label: "Feedback", icon: MessageSquare },
+  { href: "/users", label: "Users", icon: Users },
+  { href: "/subscription", label: "Subscription", icon: Lock },
 ];
 
 export function Sidebar({
