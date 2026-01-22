@@ -24,7 +24,7 @@ type Feedback = {
   message: string;
   type?: "suggestion" | "bug" | "question" | "compliment" | string;
   status?: "new" | "in_progress" | "resolved" | string;
-  created_at?: any;
+  created_at?: unknown;
 };
 
 const typeBadge: Record<string, string> = {
@@ -52,12 +52,18 @@ export function FeedbackTable() {
       q,
       (snap) => {
         const list: Feedback[] = [];
-        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Omit<Feedback, "id">) }));
         setRows(list);
         setLoading(false);
       },
-      () => {
-        toast.error("Failed to load feedback");
+      (error) => {
+        console.error("Error loading feedback:", error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("permission") || errorMessage.includes("PERMISSION_DENIED")) {
+          toast.error("Permission denied. Please ensure your account has admin custom claims set.");
+        } else {
+          toast.error(`Failed to load feedback: ${errorMessage}`);
+        }
         setLoading(false);
       }
     );
@@ -78,9 +84,9 @@ export function FeedbackTable() {
       });
   }, [rows, search, type, status]);
 
-  const formatDate = (ts: any) => {
+  const formatDate = (ts: unknown) => {
     if (!ts) return "N/A";
-    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const d = ts && typeof ts === "object" && "toDate" in ts && typeof ts.toDate === "function" ? ts.toDate() : new Date(ts as number | string | Date);
     return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
   };
 

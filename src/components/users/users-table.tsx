@@ -8,7 +8,6 @@ import {
   orderBy,
   query,
   setDoc,
-  updateDoc,
 } from "firebase/firestore";
 import toast from "react-hot-toast";
 import { db } from "@/lib/firebase";
@@ -20,15 +19,15 @@ import { Search, ShieldCheck, ShieldX } from "lucide-react";
 type UserRow = {
   id: string; // doc id = uid
   email?: string | null;
-  created_at?: any;
-  last_seen?: any;
+  createdAt?: unknown;
+  lastLoginAt?: unknown;
   premium_override?: boolean | null; // optional manual override
   platform?: string | null;
 };
 
-function formatDate(ts: any) {
+function formatDate(ts: unknown) {
   if (!ts) return "—";
-  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const d = ts && typeof ts === "object" && "toDate" in ts && typeof ts.toDate === "function" ? ts.toDate() : new Date(ts as number | string | Date);
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
 }
 
@@ -38,17 +37,23 @@ export function UsersTable() {
   const [search, setSearch] = useState("");
 
   useEffect(() => {
-    const q = query(collection(db, "users"), orderBy("created_at", "desc"));
+    const q = query(collection(db, "users"), orderBy("createdAt", "desc"));
     const unsub = onSnapshot(
       q,
       (snap) => {
         const list: UserRow[] = [];
-        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as any) }));
+        snap.forEach((d) => list.push({ id: d.id, ...(d.data() as Omit<UserRow, "id">) }));
         setRows(list);
         setLoading(false);
       },
-      () => {
-        toast.error("Failed to load users");
+      (error) => {
+        console.error("Error loading users:", error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("permission") || errorMessage.includes("PERMISSION_DENIED")) {
+          toast.error("Permission denied. Please ensure your account has admin custom claims set.");
+        } else {
+          toast.error(`Failed to load users: ${errorMessage}`);
+        }
         setLoading(false);
       }
     );
@@ -129,7 +134,7 @@ export function UsersTable() {
                     <div className="font-semibold text-gray-900 break-all">{u.email ?? "Anonymous / no email"}</div>
                     <div className="text-sm text-gray-500 break-all">uid: {u.id}</div>
                     <div className="mt-1 text-xs text-gray-500">
-                      created: {formatDate(u.created_at)} • last seen: {formatDate(u.last_seen)} • platform:{" "}
+                      created: {formatDate(u.createdAt)} • last seen: {formatDate(u.lastLoginAt)} • platform:{" "}
                       {u.platform ?? "—"}
                     </div>
                   </div>

@@ -58,10 +58,13 @@ export function SubscriptionSettings() {
             found = { id: d.id, enabled: data.enabled };
           }
         });
-        if (found && legacyModeDocId !== found.id) {
-          setLegacyModeDocId(found.id);
-          // Only apply legacy value if preferred doc isn't present
-          setModeEnabled((current) => current || found!.enabled);
+        if (found !== null) {
+          const foundValue: { id: string; enabled: boolean } = found;
+          if (legacyModeDocId !== foundValue.id) {
+            setLegacyModeDocId(foundValue.id);
+            // Only apply legacy value if preferred doc isn't present
+            setModeEnabled((current) => current || foundValue.enabled);
+          }
         }
       },
       () => {
@@ -169,6 +172,7 @@ export function SubscriptionSettings() {
       toast.error("Failed to add game");
     }
   };
+
 
   if (loading) {
     return (
