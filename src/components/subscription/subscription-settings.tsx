@@ -7,6 +7,7 @@ import {
   onSnapshot,
   query,
   setDoc,
+  addDoc,
   limit,
   updateDoc,
 } from "firebase/firestore";
@@ -15,22 +16,27 @@ import { db } from "@/lib/firebase";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Pencil, Check, X, Search } from "lucide-react";
 
 type GameAccessDoc = {
-  locked?: boolean;
-  label?: string;
+  gameId: string;
+  label: string;
+  isSubscriptionRequired: boolean;
   updated_at?: unknown;
 };
 
 export function SubscriptionSettings() {
   const [loading, setLoading] = useState(true);
   const [modeEnabled, setModeEnabled] = useState(false);
-  const [games, setGames] = useState<Array<{ id: string; locked: boolean; label?: string }>>([]);
+  const [games, setGames] = useState<Array<{ docId: string; gameId: string; label: string; isSubscriptionRequired: boolean }>>([]);
   const [legacyModeDocId, setLegacyModeDocId] = useState<string | null>(null);
-  const [legacyGameAccessDocId, setLegacyGameAccessDocId] = useState<string | null>(null);
 
   const [newId, setNewId] = useState("");
   const [newLabel, setNewLabel] = useState("");
+  const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editingGameId, setEditingGameId] = useState("");
+  const [editingLabel, setEditingLabel] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     // Preferred schema: app_config/subscription { enabled: boolean }
@@ -72,36 +78,29 @@ export function SubscriptionSettings() {
       }
     );
 
-    // Supports BOTH:
-    // A) game_access/{gc_01} { locked: true, label: "Smart Kids" }
-    // B) game_access/{randomDoc} { gc_01: true, gc_02: false, ... }
+    // New schema: game_access/{docId} { gameId: "gc_01", label: "Memory Flip", isSubscriptionRequired: true }
     const q = query(collection(db, "game_access"));
     const unsubGames = onSnapshot(
       q,
       (snap) => {
-        const rows: Array<{ id: string; locked: boolean; label?: string }> = [];
-        let legacyDoc: string | null = null;
+        const rows: Array<{ docId: string; gameId: string; label: string; isSubscriptionRequired: boolean }> = [];
 
         snap.forEach((d) => {
-          const data = d.data() as Record<string, unknown> & GameAccessDoc;
-
-          // New schema (per-doc)
-          if (typeof data.locked === "boolean") {
-            rows.push({ id: d.id, locked: Boolean(data.locked), label: data.label });
-            return;
-          }
-
-          // Legacy schema (single doc with gc_* fields)
-          const gcKeys = Object.keys(data).filter((k) => k.startsWith("gc_") && typeof data[k] === "boolean");
-          if (gcKeys.length > 0) {
-            legacyDoc = d.id;
-            for (const key of gcKeys) {
-              rows.push({ id: key, locked: Boolean(data[key]), label: key });
-            }
+          const data = d.data() as GameAccessDoc;
+          
+          // New schema: must have gameId, label, and isSubscriptionRequired
+          if (data.gameId && typeof data.gameId === "string" && 
+              data.label && typeof data.label === "string" &&
+              typeof data.isSubscriptionRequired === "boolean") {
+            rows.push({
+              docId: d.id,
+              gameId: data.gameId,
+              label: data.label,
+              isSubscriptionRequired: data.isSubscriptionRequired,
+            });
           }
         });
 
-        setLegacyGameAccessDocId(legacyDoc);
         setGames(rows);
         setLoading(false);
       },
@@ -119,9 +118,21 @@ export function SubscriptionSettings() {
   }, [legacyModeDocId]);
 
   const sorted = useMemo(() => {
-    // If label missing, keep stable but show id
-    return [...games].sort((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id));
-  }, [games]);
+    let filtered = games;
+    
+    // Filter by search query (case-insensitive)
+    if (searchQuery.trim()) {
+      const query = searchQuery.trim().toLowerCase();
+      filtered = games.filter(
+        (g) =>
+          g.label.toLowerCase().includes(query) ||
+          g.gameId.toLowerCase().includes(query)
+      );
+    }
+    
+    // Sort by label in ascending order
+    return [...filtered].sort((a, b) => a.label.localeCompare(b.label));
+  }, [games, searchQuery]);
 
   const toggleMode = async () => {
     try {
@@ -138,14 +149,9 @@ export function SubscriptionSettings() {
     }
   };
 
-  const setLocked = async (id: string, locked: boolean) => {
+  const setLocked = async (docId: string, isSubscriptionRequired: boolean) => {
     try {
-      // If legacy doc exists and this id looks like gc_*, update the field in that doc.
-      if (legacyGameAccessDocId && id.startsWith("gc_")) {
-        await updateDoc(doc(db, "game_access", legacyGameAccessDocId), { [id]: locked });
-      } else {
-        await setDoc(doc(db, "game_access", id), { locked }, { merge: true });
-      }
+      await updateDoc(doc(db, "game_access", docId), { isSubscriptionRequired });
       toast.success("Updated");
     } catch {
       toast.error("Update failed");
@@ -153,23 +159,76 @@ export function SubscriptionSettings() {
   };
 
   const addGame = async () => {
-    const id = newId.trim();
-    if (!id) return toast.error("Game id is required (ex: gc_01)");
+    const gameId = newId.trim();
+    const label = newLabel.trim();
+    if (!gameId) return toast.error("Game id is required (ex: gc_01)");
+    if (!label) return toast.error("Label is required (ex: Memory Flip)");
+    
+    // Check if gameId already exists
+    const existing = games.find(g => g.gameId === gameId);
+    if (existing) {
+      return toast.error(`Game with id "${gameId}" already exists`);
+    }
+    
     try {
-      if (legacyGameAccessDocId && id.startsWith("gc_")) {
-        await updateDoc(doc(db, "game_access", legacyGameAccessDocId), { [id]: true });
-      } else {
-        await setDoc(
-          doc(db, "game_access", id),
-          { label: newLabel.trim() || id, locked: true },
-          { merge: true }
-        );
-      }
+      await addDoc(
+        collection(db, "game_access"),
+        {
+          gameId,
+          label,
+          isSubscriptionRequired: true,
+        }
+      );
       setNewId("");
       setNewLabel("");
       toast.success("Added");
-    } catch {
+    } catch (error) {
+      console.error("Failed to add game:", error);
       toast.error("Failed to add game");
+    }
+  };
+
+  const startEditing = (docId: string, gameId: string, label: string) => {
+    setEditingDocId(docId);
+    setEditingGameId(gameId);
+    setEditingLabel(label);
+  };
+
+  const cancelEditing = () => {
+    setEditingDocId(null);
+    setEditingGameId("");
+    setEditingLabel("");
+  };
+
+  const saveEdit = async (docId: string) => {
+    const gameId = editingGameId.trim();
+    const label = editingLabel.trim();
+    
+    if (!gameId) {
+      toast.error("Game id is required");
+      return;
+    }
+    if (!label) {
+      toast.error("Label is required");
+      return;
+    }
+
+    // Check if gameId already exists (excluding the current document)
+    const existing = games.find(g => g.gameId === gameId && g.docId !== docId);
+    if (existing) {
+      toast.error(`Game with id "${gameId}" already exists`);
+      return;
+    }
+
+    try {
+      await updateDoc(doc(db, "game_access", docId), {
+        gameId,
+        label,
+      });
+      cancelEditing();
+      toast.success("Game updated");
+    } catch {
+      toast.error("Failed to update game");
     }
   };
 
@@ -220,33 +279,98 @@ export function SubscriptionSettings() {
             <Input placeholder="Label (ex: Smart Kids)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
             <Button onClick={addGame}>Add locked game</Button>
           </div>
+          
+          {games.length > 0 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search by label or game id..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          )}
 
           <div className="divide-y divide-gray-200 rounded-xl border border-gray-200">
             {sorted.length === 0 ? (
               <div className="p-6 text-center text-gray-500">No game flags yet.</div>
             ) : (
               sorted.map((g) => (
-                <div key={g.id} className="flex items-center justify-between gap-3 p-4">
-                  <div>
-                    <div className="font-semibold text-gray-900">{g.label ?? g.id}</div>
-                    <div className="text-sm text-gray-500">{g.id}</div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        g.locked ? "bg-primary-100 text-primary-900" : "bg-green-100 text-green-800"
-                      }`}
-                    >
-                      {g.locked ? "Locked" : "Free"}
-                    </span>
-                    <Button
-                      variant="outline"
-                      onClick={() => setLocked(g.id, !g.locked)}
-                      title="Toggle lock"
-                    >
-                      {g.locked ? "Make Free" : "Make Locked"}
-                    </Button>
-                  </div>
+                <div key={g.docId} className="flex items-center justify-between gap-3 p-4">
+                  {editingDocId === g.docId ? (
+                    <div className="flex-1 flex items-center gap-2">
+                      <Input
+                        value={editingGameId}
+                        onChange={(e) => setEditingGameId(e.target.value)}
+                        placeholder="Game id"
+                        className="flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(g.docId);
+                          if (e.key === "Escape") cancelEditing();
+                        }}
+                        autoFocus
+                      />
+                      <Input
+                        value={editingLabel}
+                        onChange={(e) => setEditingLabel(e.target.value)}
+                        placeholder="Label"
+                        className="flex-1"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") saveEdit(g.docId);
+                          if (e.key === "Escape") cancelEditing();
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => saveEdit(g.docId)}
+                        title="Save"
+                      >
+                        <Check className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={cancelEditing}
+                        title="Cancel"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900">{g.label}</div>
+                        <div className="text-sm text-gray-500">{g.gameId}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            g.isSubscriptionRequired ? "bg-primary-100 text-primary-900" : "bg-green-100 text-green-800"
+                          }`}
+                        >
+                          {g.isSubscriptionRequired ? "Locked" : "Free"}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => startEditing(g.docId, g.gameId, g.label)}
+                          title="Edit game"
+                          className="h-8 w-8 p-0"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setLocked(g.docId, !g.isSubscriptionRequired)}
+                          title="Toggle lock"
+                        >
+                          {g.isSubscriptionRequired ? "Make Free" : "Make Locked"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))
             )}

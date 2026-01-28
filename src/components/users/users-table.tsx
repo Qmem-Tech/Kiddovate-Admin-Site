@@ -22,6 +22,8 @@ type UserRow = {
   createdAt?: unknown;
   lastLoginAt?: unknown;
   premium_override?: boolean | null; // optional manual override
+  is_subscribed?: boolean | null; // RevenueCat subscription status
+  subscription_updated_at?: unknown;
   platform?: string | null;
 };
 
@@ -136,10 +138,22 @@ export function UsersTable() {
                     <div className="mt-1 text-xs text-gray-500">
                       created: {formatDate(u.createdAt)} • last seen: {formatDate(u.lastLoginAt)} • platform:{" "}
                       {u.platform ?? "—"}
+                      {u.subscription_updated_at != null && (
+                        <> • sub updated: {formatDate(u.subscription_updated_at)}</>
+                      )}
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        u.is_subscribed === true
+                          ? "bg-blue-100 text-blue-800"
+                          : "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      RevenueCat: {u.is_subscribed === true ? "Subscribed" : u.is_subscribed === false ? "Not Subscribed" : "Unknown"}
+                    </span>
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold ${
                         u.premium_override === true

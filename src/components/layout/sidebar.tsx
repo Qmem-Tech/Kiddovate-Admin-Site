@@ -12,6 +12,7 @@ import {
   Lock,
   LogOut,
   Gamepad2,
+  BarChart3,
 } from "lucide-react";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -19,6 +20,7 @@ import toast from "react-hot-toast";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/content", label: "Content", icon: FileText },
   { href: "/feedback", label: "Feedback", icon: MessageSquare },
   { href: "/users", label: "Users", icon: Users },
