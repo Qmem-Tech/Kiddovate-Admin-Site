@@ -13,6 +13,7 @@ import {
   LogOut,
   Gamepad2,
   BarChart3,
+  Globe,
 } from "lucide-react";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -25,6 +26,7 @@ const nav = [
   { href: "/feedback", label: "Feedback", icon: MessageSquare },
   { href: "/users", label: "Users", icon: Users },
   { href: "/subscription", label: "Subscription", icon: Lock },
+  { href: "/website", label: "Website", icon: Globe },
 ];
 
 export function Sidebar({
@@ -124,4 +126,3 @@ export function Sidebar({
     </>
   );
 }
-
