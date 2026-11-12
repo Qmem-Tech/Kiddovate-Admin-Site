@@ -24,6 +24,7 @@ const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/content", label: "Content", icon: FileText },
+  { href: "/books", label: "Books", icon: BookOpen },
   { href: "/feedback", label: "Feedback", icon: MessageSquare },
   { href: "/users", label: "Users", icon: Users },
   { href: "/subscription", label: "Subscription", icon: Lock },

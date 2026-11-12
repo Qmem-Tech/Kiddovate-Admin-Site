@@ -1,5 +1,5 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageSquare, FileText, Shield, ArrowUpRight } from "lucide-react";
+import { MessageSquare, FileText, Shield, ArrowUpRight, BookOpen } from "lucide-react";
 import Link from "next/link";
 
 export default function DashboardPage() {
@@ -52,6 +52,24 @@ export default function DashboardPage() {
         <Card className="border-0 shadow-kiddovate hover:shadow-kiddovate-lg transition-shadow">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
+              <BookOpen className="h-5 w-5 text-primary-600" />
+              Books
+            </CardTitle>
+            <CardDescription>Upload and manage storybooks for the app</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link
+              href="/books"
+              className="inline-flex items-center font-semibold text-primary-600 hover:underline"
+            >
+              Go to books <ArrowUpRight className="ml-1 h-4 w-4" />
+            </Link>
+          </CardContent>
+        </Card>
+
+        <Card className="border-0 shadow-kiddovate hover:shadow-kiddovate-lg transition-shadow">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
               <Shield className="h-5 w-5 text-primary-600" />
               Security
             </CardTitle>
@@ -67,4 +85,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
