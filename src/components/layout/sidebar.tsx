@@ -14,7 +14,7 @@ import {
   Gamepad2,
   BarChart3,
   Globe,
-  BookOpen,
+  Settings,
 } from "lucide-react";
 import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
@@ -29,6 +29,7 @@ const nav = [
   { href: "/users", label: "Users", icon: Users },
   { href: "/subscription", label: "Subscription", icon: Lock },
   { href: "/website", label: "Website", icon: Globe },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar({

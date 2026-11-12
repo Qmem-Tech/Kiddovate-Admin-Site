@@ -25,18 +25,78 @@ type GameAccessDoc = {
   updated_at?: unknown;
 };
 
+type AccessRow = { docId: string; gameId: string; label: string; isSubscriptionRequired: boolean };
+
+function AccessTable({ rows, editingDocId, editingGameId, editingLabel, onEdit, onSave, onCancel, onToggle, setEditingGameId, setEditingLabel }: {
+  rows: AccessRow[];
+  editingDocId: string | null;
+  editingGameId: string;
+  editingLabel: string;
+  onEdit: (docId: string, gameId: string, label: string) => void;
+  onSave: (docId: string) => void;
+  onCancel: () => void;
+  onToggle: (docId: string, newValue: boolean) => void;
+  setEditingGameId: (v: string) => void;
+  setEditingLabel: (v: string) => void;
+}) {
+  if (rows.length === 0) {
+    return <div className="p-6 text-center text-gray-500 rounded-xl border border-gray-200">No entries yet.</div>;
+  }
+  return (
+    <div className="divide-y divide-gray-200 rounded-xl border border-gray-200">
+      {rows.map((g) => (
+        <div key={g.docId} className="flex items-center justify-between gap-3 p-4">
+          {editingDocId === g.docId ? (
+            <div className="flex-1 flex items-center gap-2">
+              <Input value={editingGameId} onChange={(e) => setEditingGameId(e.target.value)} placeholder="Game id" className="flex-1"
+                onKeyDown={(e) => { if (e.key === "Enter") onSave(g.docId); if (e.key === "Escape") onCancel(); }} autoFocus />
+              <Input value={editingLabel} onChange={(e) => setEditingLabel(e.target.value)} placeholder="Label" className="flex-1"
+                onKeyDown={(e) => { if (e.key === "Enter") onSave(g.docId); if (e.key === "Escape") onCancel(); }} />
+              <Button variant="outline" size="sm" onClick={() => onSave(g.docId)} title="Save"><Check className="h-4 w-4" /></Button>
+              <Button variant="outline" size="sm" onClick={onCancel} title="Cancel"><X className="h-4 w-4" /></Button>
+            </div>
+          ) : (
+            <>
+              <div className="flex-1">
+                <div className="font-semibold text-gray-900">{g.label}</div>
+                <div className="text-sm text-gray-500 font-mono">{g.gameId}</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold ${g.isSubscriptionRequired ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"}`}>
+                  {g.isSubscriptionRequired ? "🔒 Locked" : "✅ Free"}
+                </span>
+                <Button variant="outline" size="sm" onClick={() => onEdit(g.docId, g.gameId, g.label)} title="Edit" className="h-8 w-8 p-0">
+                  <Pencil className="h-3.5 w-3.5" />
+                </Button>
+                <Button variant="outline" onClick={() => onToggle(g.docId, !g.isSubscriptionRequired)}>
+                  {g.isSubscriptionRequired ? "Make Free" : "Make Locked"}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function SubscriptionSettings() {
   const [loading, setLoading] = useState(true);
   const [modeEnabled, setModeEnabled] = useState(false);
-  const [games, setGames] = useState<Array<{ docId: string; gameId: string; label: string; isSubscriptionRequired: boolean }>>([]);
+  const [games, setGames] = useState<AccessRow[]>([]);
+  const [learningGames, setLearningGames] = useState<AccessRow[]>([]);
   const [legacyModeDocId, setLegacyModeDocId] = useState<string | null>(null);
 
   const [newId, setNewId] = useState("");
   const [newLabel, setNewLabel] = useState("");
+  const [newLearningId, setNewLearningId] = useState("");
+  const [newLearningLabel, setNewLearningLabel] = useState("");
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
+  const [editingCollection, setEditingCollection] = useState<"game_access" | "learning_access">("game_access");
   const [editingGameId, setEditingGameId] = useState("");
   const [editingLabel, setEditingLabel] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchLearningQuery, setSearchLearningQuery] = useState("");
 
   useEffect(() => {
     // Preferred schema: app_config/subscription { enabled: boolean }
@@ -78,35 +138,59 @@ export function SubscriptionSettings() {
       }
     );
 
-    // New schema: game_access/{docId} { gameId: "gc_01", label: "Memory Flip", isSubscriptionRequired: true }
-    const q = query(collection(db, "game_access"));
+    // game_access collection
     const unsubGames = onSnapshot(
-      q,
+      query(collection(db, "game_access")),
       (snap) => {
-        const rows: Array<{ docId: string; gameId: string; label: string; isSubscriptionRequired: boolean }> = [];
-
+        const rows: AccessRow[] = [];
+        console.group("🔥 [game_access] snapshot — %d docs", snap.docs.length);
         snap.forEach((d) => {
           const data = d.data() as GameAccessDoc;
-          
-          // New schema: must have gameId, label, and isSubscriptionRequired
-          if (data.gameId && typeof data.gameId === "string" && 
+          console.log("  📄 doc=%s | gameId=%s | label=%s | isSubscriptionRequired=%s | raw=", d.id, data.gameId, data.label, data.isSubscriptionRequired, data);
+          if (data.gameId && typeof data.gameId === "string" &&
               data.label && typeof data.label === "string" &&
               typeof data.isSubscriptionRequired === "boolean") {
-            rows.push({
-              docId: d.id,
-              gameId: data.gameId,
-              label: data.label,
-              isSubscriptionRequired: data.isSubscriptionRequired,
-            });
+            rows.push({ docId: d.id, gameId: data.gameId, label: data.label, isSubscriptionRequired: data.isSubscriptionRequired });
+          } else {
+            console.warn("  ⚠️ SKIPPED doc=%s — missing/wrong field types", d.id, data);
           }
         });
-
+        console.log("  ✅ Parsed %d rows:", rows.length, rows);
+        console.groupEnd();
         setGames(rows);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        console.error("❌ game_access listener error", err);
         toast.error("Failed to load game access list");
         setLoading(false);
+      }
+    );
+
+    // learning_access collection
+    const unsubLearning = onSnapshot(
+      query(collection(db, "learning_access")),
+      (snap) => {
+        const rows: AccessRow[] = [];
+        console.group("🔥 [learning_access] snapshot — %d docs", snap.docs.length);
+        snap.forEach((d) => {
+          const data = d.data() as GameAccessDoc;
+          console.log("  📄 doc=%s | gameId=%s | label=%s | isSubscriptionRequired=%s | raw=", d.id, data.gameId, data.label, data.isSubscriptionRequired, data);
+          if (data.gameId && typeof data.gameId === "string" &&
+              data.label && typeof data.label === "string" &&
+              typeof data.isSubscriptionRequired === "boolean") {
+            rows.push({ docId: d.id, gameId: data.gameId, label: data.label, isSubscriptionRequired: data.isSubscriptionRequired });
+          } else {
+            console.warn("  ⚠️ SKIPPED doc=%s — missing/wrong field types", d.id, data);
+          }
+        });
+        console.log("  ✅ Parsed %d rows:", rows.length, rows);
+        console.groupEnd();
+        setLearningGames(rows);
+      },
+      (err) => {
+        console.error("❌ learning_access listener error", err);
+        toast.error("Failed to load learning access list");
       }
     );
 
@@ -114,25 +198,27 @@ export function SubscriptionSettings() {
       unsubMode();
       unsubModeLegacy();
       unsubGames();
+      unsubLearning();
     };
   }, [legacyModeDocId]);
 
   const sorted = useMemo(() => {
     let filtered = games;
-    
-    // Filter by search query (case-insensitive)
     if (searchQuery.trim()) {
-      const query = searchQuery.trim().toLowerCase();
-      filtered = games.filter(
-        (g) =>
-          g.label.toLowerCase().includes(query) ||
-          g.gameId.toLowerCase().includes(query)
-      );
+      const q = searchQuery.trim().toLowerCase();
+      filtered = games.filter(g => g.label.toLowerCase().includes(q) || g.gameId.toLowerCase().includes(q));
     }
-    
-    // Sort by label in ascending order
     return [...filtered].sort((a, b) => a.label.localeCompare(b.label));
   }, [games, searchQuery]);
+
+  const sortedLearning = useMemo(() => {
+    let filtered = learningGames;
+    if (searchLearningQuery.trim()) {
+      const q = searchLearningQuery.trim().toLowerCase();
+      filtered = learningGames.filter(g => g.label.toLowerCase().includes(q) || g.gameId.toLowerCase().includes(q));
+    }
+    return [...filtered].sort((a, b) => a.label.localeCompare(b.label));
+  }, [learningGames, searchLearningQuery]);
 
   const toggleMode = async () => {
     try {
@@ -149,11 +235,13 @@ export function SubscriptionSettings() {
     }
   };
 
-  const setLocked = async (docId: string, isSubscriptionRequired: boolean) => {
+  const setLocked = async (collectionName: "game_access" | "learning_access", docId: string, isSubscriptionRequired: boolean) => {
     try {
-      await updateDoc(doc(db, "game_access", docId), { isSubscriptionRequired });
+      console.log(`🔒 [${collectionName}] Setting doc=${docId} isSubscriptionRequired=${isSubscriptionRequired}`);
+      await updateDoc(doc(db, collectionName, docId), { isSubscriptionRequired });
       toast.success("Updated");
-    } catch {
+    } catch (err) {
+      console.error(`❌ Failed to update ${collectionName} doc=${docId}`, err);
       toast.error("Update failed");
     }
   };
@@ -163,24 +251,11 @@ export function SubscriptionSettings() {
     const label = newLabel.trim();
     if (!gameId) return toast.error("Game id is required (ex: gc_01)");
     if (!label) return toast.error("Label is required (ex: Memory Flip)");
-    
-    // Check if gameId already exists
-    const existing = games.find(g => g.gameId === gameId);
-    if (existing) {
-      return toast.error(`Game with id "${gameId}" already exists`);
-    }
-    
+    if (games.find(g => g.gameId === gameId)) return toast.error(`Game with id "${gameId}" already exists`);
     try {
-      await addDoc(
-        collection(db, "game_access"),
-        {
-          gameId,
-          label,
-          isSubscriptionRequired: true,
-        }
-      );
-      setNewId("");
-      setNewLabel("");
+      console.log("➕ [game_access] Adding gameId=%s label=%s", gameId, label);
+      await addDoc(collection(db, "game_access"), { gameId, label, isSubscriptionRequired: true });
+      setNewId(""); setNewLabel("");
       toast.success("Added");
     } catch (error) {
       console.error("Failed to add game:", error);
@@ -188,7 +263,25 @@ export function SubscriptionSettings() {
     }
   };
 
-  const startEditing = (docId: string, gameId: string, label: string) => {
+  const addLearningGame = async () => {
+    const gameId = newLearningId.trim();
+    const label = newLearningLabel.trim();
+    if (!gameId) return toast.error("Game id is required (ex: gc_01_l)");
+    if (!label) return toast.error("Label is required");
+    if (learningGames.find(g => g.gameId === gameId)) return toast.error(`Learning item with id "${gameId}" already exists`);
+    try {
+      console.log("➕ [learning_access] Adding gameId=%s label=%s", gameId, label);
+      await addDoc(collection(db, "learning_access"), { gameId, label, isSubscriptionRequired: true });
+      setNewLearningId(""); setNewLearningLabel("");
+      toast.success("Added");
+    } catch (error) {
+      console.error("Failed to add learning item:", error);
+      toast.error("Failed to add learning item");
+    }
+  };
+
+  const startEditing = (collectionName: "game_access" | "learning_access", docId: string, gameId: string, label: string) => {
+    setEditingCollection(collectionName);
     setEditingDocId(docId);
     setEditingGameId(gameId);
     setEditingLabel(label);
@@ -203,32 +296,20 @@ export function SubscriptionSettings() {
   const saveEdit = async (docId: string) => {
     const gameId = editingGameId.trim();
     const label = editingLabel.trim();
-    
-    if (!gameId) {
-      toast.error("Game id is required");
-      return;
-    }
-    if (!label) {
-      toast.error("Label is required");
-      return;
-    }
+    if (!gameId) return toast.error("Game id is required");
+    if (!label) return toast.error("Label is required");
 
-    // Check if gameId already exists (excluding the current document)
-    const existing = games.find(g => g.gameId === gameId && g.docId !== docId);
-    if (existing) {
-      toast.error(`Game with id "${gameId}" already exists`);
-      return;
+    const sourceList = editingCollection === "game_access" ? games : learningGames;
+    if (sourceList.find(g => g.gameId === gameId && g.docId !== docId)) {
+      return toast.error(`Id "${gameId}" already exists`);
     }
-
     try {
-      await updateDoc(doc(db, "game_access", docId), {
-        gameId,
-        label,
-      });
+      console.log(`✏️ [${editingCollection}] Saving doc=${docId} gameId=${gameId} label=${label}`);
+      await updateDoc(doc(db, editingCollection, docId), { gameId, label });
       cancelEditing();
-      toast.success("Game updated");
+      toast.success("Updated");
     } catch {
-      toast.error("Failed to update game");
+      toast.error("Failed to update");
     }
   };
 
@@ -266,115 +347,59 @@ export function SubscriptionSettings() {
         </CardContent>
       </Card>
 
+      {/* ── game_access ── */}
       <Card className="border-0 shadow-kiddovate">
         <CardHeader>
-          <CardTitle>Game Locks</CardTitle>
+          <CardTitle>Game Locks <span className="text-sm font-normal text-gray-400 ml-1">(Firestore: game_access)</span></CardTitle>
           <CardDescription>
-            These are the per-game flags (Firestore: <code>game_access</code>). Locked games require an active subscription when subscription mode is enabled.
+            Controls which game tiles are locked on the <strong>Play</strong> tab. Locked games require an active subscription when subscription mode is on.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Input placeholder="Game id (ex: gc_01)" value={newId} onChange={(e) => setNewId(e.target.value)} />
-            <Input placeholder="Label (ex: Smart Kids)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
-            <Button onClick={addGame}>Add locked game</Button>
+            <Input placeholder="Game id (ex: gc_03)" value={newId} onChange={(e) => setNewId(e.target.value)} />
+            <Input placeholder="Label (ex: Science)" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} />
+            <Button onClick={addGame}>Add</Button>
           </div>
-          
           {games.length > 0 && (
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-              <Input
-                placeholder="Search by label or game id..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10" />
             </div>
           )}
+          <AccessTable rows={sorted} editingDocId={editingDocId} editingGameId={editingGameId} editingLabel={editingLabel}
+            onEdit={(docId, gameId, label) => startEditing("game_access", docId, gameId, label)}
+            onSave={saveEdit} onCancel={cancelEditing}
+            onToggle={(docId, val) => setLocked("game_access", docId, val)}
+            setEditingGameId={setEditingGameId} setEditingLabel={setEditingLabel} />
+        </CardContent>
+      </Card>
 
-          <div className="divide-y divide-gray-200 rounded-xl border border-gray-200">
-            {sorted.length === 0 ? (
-              <div className="p-6 text-center text-gray-500">No game flags yet.</div>
-            ) : (
-              sorted.map((g) => (
-                <div key={g.docId} className="flex items-center justify-between gap-3 p-4">
-                  {editingDocId === g.docId ? (
-                    <div className="flex-1 flex items-center gap-2">
-                      <Input
-                        value={editingGameId}
-                        onChange={(e) => setEditingGameId(e.target.value)}
-                        placeholder="Game id"
-                        className="flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveEdit(g.docId);
-                          if (e.key === "Escape") cancelEditing();
-                        }}
-                        autoFocus
-                      />
-                      <Input
-                        value={editingLabel}
-                        onChange={(e) => setEditingLabel(e.target.value)}
-                        placeholder="Label"
-                        className="flex-1"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") saveEdit(g.docId);
-                          if (e.key === "Escape") cancelEditing();
-                        }}
-                      />
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => saveEdit(g.docId)}
-                        title="Save"
-                      >
-                        <Check className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={cancelEditing}
-                        title="Cancel"
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex-1">
-                        <div className="font-semibold text-gray-900">{g.label}</div>
-                        <div className="text-sm text-gray-500">{g.gameId}</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            g.isSubscriptionRequired ? "bg-primary-100 text-primary-900" : "bg-green-100 text-green-800"
-                          }`}
-                        >
-                          {g.isSubscriptionRequired ? "Locked" : "Free"}
-                        </span>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => startEditing(g.docId, g.gameId, g.label)}
-                          title="Edit game"
-                          className="h-8 w-8 p-0"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => setLocked(g.docId, !g.isSubscriptionRequired)}
-                          title="Toggle lock"
-                        >
-                          {g.isSubscriptionRequired ? "Make Free" : "Make Locked"}
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))
-            )}
+      {/* ── learning_access ── */}
+      <Card className="border-0 shadow-kiddovate">
+        <CardHeader>
+          <CardTitle>Learning Locks <span className="text-sm font-normal text-gray-400 ml-1">(Firestore: learning_access)</span></CardTitle>
+          <CardDescription>
+            Controls which learn tiles are locked on the <strong>Learn</strong> tab. <strong className="text-orange-600">This collection is also read by the app</strong> — a gc_03 entry here can lock &quot;Discover World&quot; even if it&apos;s free in game_access above.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Input placeholder="Game id (ex: gc_03)" value={newLearningId} onChange={(e) => setNewLearningId(e.target.value)} />
+            <Input placeholder="Label (ex: Discover World)" value={newLearningLabel} onChange={(e) => setNewLearningLabel(e.target.value)} />
+            <Button onClick={addLearningGame}>Add</Button>
           </div>
+          {learningGames.length > 0 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input placeholder="Search…" value={searchLearningQuery} onChange={(e) => setSearchLearningQuery(e.target.value)} className="pl-10" />
+            </div>
+          )}
+          <AccessTable rows={sortedLearning} editingDocId={editingDocId} editingGameId={editingGameId} editingLabel={editingLabel}
+            onEdit={(docId, gameId, label) => startEditing("learning_access", docId, gameId, label)}
+            onSave={saveEdit} onCancel={cancelEditing}
+            onToggle={(docId, val) => setLocked("learning_access", docId, val)}
+            setEditingGameId={setEditingGameId} setEditingLabel={setEditingLabel} />
         </CardContent>
       </Card>
     </div>
